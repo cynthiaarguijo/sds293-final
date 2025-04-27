@@ -18,24 +18,7 @@ water_data <- Water_Quality_Sampling_Data |> mutate(SAMPLE_DATE = as.Date(SAMPLE
 ```
 
 
-```{r}
-# filter for all years but surface water and bacteria
-bacteria_water <- water_data  %>% filter(PARAM_TYPE == "Bacteria/Pathogens")
-
-```
-
-```{r}
-# filter for ground water and surface water, remove pounds unit, year 2014, parameter type metals, and only the metal types
-metals_sg_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water", UNIT != "Pounds (lbs)"), PARAM_TYPE =="Metals", YEAR == "2014", PARAMETER %in% c("ARSENIC", "CADIUM", "CHROMIUM", "COPPER", "IRON", "LEAD", "LITHIUM", "NICKEL", "ZINC"))
-# convert mg/l to ug/l to have all units in unison
-metals_sg_water$RESULT[metals_sg_water$UNIT == "MG/L"] <- ground_surface_water$RESULT[ground_surface_water$UNIT == "MG/L"] * 1000
-metals_sg_water$UNIT[metals_sg_water$UNIT == "MG/L"] <- "UG/L"
-
-# filter for ground water and surface water, year 2014, and include only bacteria/pathogens
-bacteria_sg_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water", UNIT != "Pounds (lbs)"), PARAM_TYPE =="Bacteria/Pathogens", YEAR == "2014")
-
-```
-
+training data and testing data 
 ```{r}
 # filter by medium to be only Ground Water and Surface Water
 # filter pounds units out
@@ -54,7 +37,10 @@ testing_water$RESULT[testing_water$UNIT == "MG/L"] <- testing_water$RESULT[testi
 testing_water$UNIT[testing_water$UNIT == "MG/L"] <- "UG/L"
 ```
 
+
+training data zip
 ```{r}
+# reverse geocode, add address column by using lat and lon
 training_water_zip <- training_water |>
     reverse_geocode(lat = LAT_DD_WGS84, long = LON_DD_WGS84, address = addr, method = "osm")
 ```
@@ -86,27 +72,22 @@ training_water_zip <- training_water_zip %>%
 ```
 
 
+
 ```{r}
-# remove the 5 digit number at the beginning of these ones so it doesn't get confused for a zip code
-training_water_zip <- training_water_zip %>%
-  mutate(addr = ifelse(addr == "15209, Decker Lake Road, Decker Lake Estates, Trinity Hill, Travis County, Texas, 78653, United States",
-                       "Decker Lake Road, Decker Lake Estates, Trinity Hill, Travis County, Texas, 78653, United States",
-                       addr))
+# identify where the missing address values are because of missing lat lon coordinates -> they are all in bear creek
+
+training_water_zip %>%
+  filter(is.na(addr)) %>%
+  pull(WATERSHED) %>%
+  unique()
+
+#replace NA for address of bear creek
 
 training_water_zip <- training_water_zip %>%
-  mutate(addr = ifelse(addr == "12133, Metric Boulevard, Village at Walnut Creek, Austin, Travis County, Texas, 78758, United States",
-                       "Metric Boulevard, Village at Walnut Creek, Austin, Travis County, Texas, 78758, United States",
-                       addr))
+  mutate(addr = ifelse(is.na(addr),
+                        "Bear Creek, Hays County, Texas, 78737, United States",
+                        addr))
 
-training_water_zip <- training_water_zip %>%
-  mutate(addr = ifelse(addr == "12099, Elmont Drive, The Crossing, Austin, Travis County, Texas, 78741, United States",
-                       "Elmont Drive, The Crossing, Austin, Travis County, Texas, 78741, United States",
-                       addr))
-
-training_water_zip <- training_water_zip %>%
-  mutate(addr = ifelse(addr == "10321, Rutland Village East, Austin, Travis County, Texas, 78758, United States",
-                       "Rutland Village East, Austin, Travis County, Texas, 78758, United States",
-                       addr))
 
 ```
 
@@ -115,9 +96,102 @@ training_water_zip <- training_water_zip %>%
 # make a zip code column 
 
 training_water_zip <- training_water_zip %>%
-  mutate(ZIP = str_extract(addr, "\\b\\d{5}\\b"))
+  mutate(ZIP = str_extract(addr, "\\b7\\d{4}\\b"))
 
 ```
+
+
+
+testing data zip
+
+```{r}
+# reverse geocode, add address column by using lat and lon
+testing_water_zip <- testing_water |>
+    reverse_geocode(lat = LAT_DD_WGS84, long = LON_DD_WGS84, address = addr, method = "osm")
+```
+
+```{r}
+# identify where the missing address values for testing data are because of missing lat lon coordinates -> they are in bear creek and barton creek (specifically airman's cave)
+testing_water_zip %>%
+  filter(is.na(addr)) %>%
+  pull(WATERSHED) %>%
+  unique()
+```
+
+```{r}
+#replace NA for address of bear creek observations
+
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(is.na(addr) & WATERSHED == "Bear Creek",
+                       "Bear Creek, Hays County, Texas, 78737, United States",
+                       addr))
+
+# replace NA for address of barton creek airman's cave
+
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(is.na(addr) & WATERSHED == "Barton Creek",
+                       "Austin, Texas, 78704, United States",
+                       addr))
+```
+
+```{r}
+# fixing addresses that do not contain a zip code
+
+# "Austin, Travis County, Texas, United States" all correspond to Walter E. Long Lake
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Austin, Travis County, Texas, United States",
+                       "Daffan Lane, Austin, Texas, 78724, United States",
+                       addr))
+# "Cannonville, Howard Ranch, Hays County, Texas, United States" all correspond to Onion Creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Cannonville, Howard Ranch, Hays County, Texas, United States",
+                       "Hays County, Texas, 78619, United States",
+                       addr))
+# "Hays County, Texas, United States" correspond to two different parts of Onion Creek, but they both have zip code 78619
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Hays County, Texas, United States",
+                       "Hays County, Texas, 78619, United States",
+                       addr))
+# "McCafferty Road, Hays County, Texas, United States" corresponds to a part of onion creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "McCafferty Road, Hays County, Texas, United States",
+                       "Hays County, Texas, 78620, United States",
+                       addr))
+# "Pursley Road, Hays County, Texas, United States" corresponds to a part of onion creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Pursley Road, Hays County, Texas, United States",
+                       "Pursley Road, Mount Sharp, Hays County, Texas, 78620, United States",
+                       addr))
+# "Ranch Road 12, Hays County, Texas, United States" corresponds to a part of onion creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Ranch Road 12, Hays County, Texas, United States",
+                       "Hays County, Texas, 78619, United States",
+                       addr))
+# "Ranch Road 150 West, Dripping Springs, Hays County, Texas, United States" corresponds to a part of onion creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Ranch Road 150 West, Dripping Springs, Hays County, Texas, United States",
+                       "Ranch Road 150 West, Hays County, Texas, 78619, United States",
+                       addr))
+# "Ranch to Market Road 967, Buda, Hays County, Texas, United States" corresponds to a little bear creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Ranch to Market Road 967, Buda, Hays County, Texas, United States",
+                       "Ranch to Market Road 967, Buda, Texas, 78610, United States",
+                       addr))
+# "Wylie Kuykendall Lane, Hays County, Texas, United States" corresponds to a part of onion creek
+testing_water_zip <- testing_water_zip %>%
+  mutate(addr = ifelse(addr == "Wylie Kuykendall Lane, Hays County, Texas, United States",
+                       "Wylie Kuykendall Lane, Hays County, Texas, 78667, United States",
+                       addr))
+```
+
+```{r}
+# make a zip code column 
+
+testing_water_zip <- testing_water_zip %>%
+  mutate(ZIP = str_extract(addr, "\\b7\\d{4}\\b"))
+
+```
+
 
 
 
@@ -126,10 +200,14 @@ training_water_zip <- training_water_zip %>%
 
 
 ```{r}
-metals_soil <- water_data |> filter(MEDIUM == "Soil")
+# filter for all years but surface water and bacteria
+bacteria_water <- water_data  %>% filter(PARAM_TYPE == "Bacteria/Pathogens")
+
 ```
 
-
+```{r}
+metals_soil <- water_data |> filter(MEDIUM == "Soil")
+```
 
 
 ```{r}
@@ -309,7 +387,7 @@ ggplot(top_watershed_data, aes(x = as.numeric(YEAR), y = sum_result, color = WAT
 ```{r}
 # use metals_sg_water data to visualize metal peaks in watersheds during 2014 
 
-# count number of observations per watershed per year
+# count number of observations per watershed per month
 monthly_counts <- bacteria_metal_water %>%
  # filter(PARAMETER == "ZINC") %>%
   group_by(WATERSHED, MONTH) %>%
@@ -341,6 +419,44 @@ ggplot(top_watershed_data, aes(x = as.numeric(MONTH), y = obs_count, color = WAT
 
   theme(legend.position = "bottom")
 
+```
+
+
+```{r}
+# visualize total sample frequencies per month code, key by zip code
+
+
+# count number of observations per watershed per month
+monthly_counts <- training_water_zip %>%
+ # filter(PARAMETER == "ZINC") %>%
+  group_by(ZIP, MONTH) %>%
+  summarise(result_month = sum(RESULT), .groups = "drop")
+
+# get  top 5 most sampled watersheds overall
+top_zip <- monthly_counts %>%
+  group_by(ZIP) %>%
+  summarise(total_obs = sum(result_month)) %>%
+  arrange(desc(total_obs)) %>%
+  slice(2:10) %>%
+  pull(ZIP)
+
+# filter to only the top 5 watersheds
+top_watershed_data <- monthly_counts %>%
+  filter(ZIP %in% top_zip)
+
+# plot
+ggplot(top_watershed_data, aes(x = as.numeric(MONTH), y = result_month, color = ZIP)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(
+    title = "ZIP Codes by Results per Month",
+    x = "Month",
+    y = "Total Results per Month",
+    color = "ZIP"
+  ) +
+  theme_minimal() +
+
+  theme(legend.position = "bottom")
 ```
 
 
