@@ -8,6 +8,7 @@ library(tidyverse)
 library(dplyr)
 library(readr)
 library(ggplot2)
+library(stringr)
 Water_Quality_Sampling_Data <- read_csv("Water_Quality_Sampling_Data.csv")
 ```
 
@@ -20,24 +21,109 @@ water_data <- Water_Quality_Sampling_Data |> mutate(SAMPLE_DATE = as.Date(SAMPLE
 ```{r}
 # filter for all years but surface water and bacteria
 bacteria_water <- water_data  %>% filter(PARAM_TYPE == "Bacteria/Pathogens")
-bacteria_water<- bacteria_water %>% mutate(SAMPLE_DATE = as.Date(SAMPLE_DATE, format = "%m/%d/%Y %I:%M:%S %p"))
-# year column
-bacteria_water <- bacteria_water %>%
-  mutate(YEAR = format(as.Date(SAMPLE_DATE), "%Y"))
-# filter for 2010 and future
-# year column
-bacteria_water <- bacteria_water %>%
-  filter(YEAR >"2007")
 
 ```
 
 ```{r}
-ground_surface_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water", UNIT != "Pounds (lbs)"), PARAM_TYPE %in% c("Metals", "Bacteria/Pathogens"), YEAR == "2014")
+# filter for ground water and surface water, remove pounds unit, year 2014, parameter type metals, and only the metal types
+metals_sg_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water", UNIT != "Pounds (lbs)"), PARAM_TYPE =="Metals", YEAR == "2014", PARAMETER %in% c("ARSENIC", "CADIUM", "CHROMIUM", "COPPER", "IRON", "LEAD", "LITHIUM", "NICKEL", "ZINC"))
+# convert mg/l to ug/l to have all units in unison
+metals_sg_water$RESULT[metals_sg_water$UNIT == "MG/L"] <- ground_surface_water$RESULT[ground_surface_water$UNIT == "MG/L"] * 1000
+metals_sg_water$UNIT[metals_sg_water$UNIT == "MG/L"] <- "UG/L"
 
-ground_surface_water$RESULT[ground_surface_water$UNIT == "MG/L"] <- ground_surface_water$RESULT[ground_surface_water$UNIT == "MG/L"] * 1000
-ground_surface_water$UNIT[ground_surface_water$UNIT == "MG/L"] <- "UG/L"
-ground_surface_water$UNIT[ground_surface_water$UNIT == "MPN/100ML"] <- "Colonies/100mL"
+# filter for ground water and surface water, year 2014, and include only bacteria/pathogens
+bacteria_sg_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water", UNIT != "Pounds (lbs)"), PARAM_TYPE =="Bacteria/Pathogens", YEAR == "2014")
+
 ```
+
+```{r}
+# filter by medium to be only Ground Water and Surface Water
+# filter pounds units out
+# filter for only bacteria/pathogens and metals
+# filter for 2015 only in training, 2016 only in testing
+# filter out non-harmful metals in param
+training_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water"), UNIT != "Pounds (lbs)", PARAM_TYPE %in% c("Bacteria/Pathogens", "Metals"), YEAR =="2015", !(PARAMETER %in% c("ALUMINUM", "BARIUM", "BORON", "STRONTIUM")))
+# convert mg/l to ug/l to have all units in unison
+training_water$RESULT[training_water$UNIT == "MG/L"] <- training_water$RESULT[training_water$UNIT == "MG/L"] * 1000
+training_water$UNIT[training_water$UNIT == "MG/L"] <- "UG/L"
+
+
+testing_water <- water_data |> filter(MEDIUM %in% c("Ground Water", "Surface Water"), UNIT != "Pounds (lbs)", PARAM_TYPE %in% c("Bacteria/Pathogens", "Metals"), YEAR == "2016", !(PARAMETER %in% c("ALUMINUM", "BARIUM", "BORON", "STRONTIUM")))
+# convert mg/l to ug/l to have all units in unison
+testing_water$RESULT[testing_water$UNIT == "MG/L"] <- testing_water$RESULT[testing_water$UNIT == "MG/L"] * 1000
+testing_water$UNIT[testing_water$UNIT == "MG/L"] <- "UG/L"
+```
+
+```{r}
+training_water_zip <- training_water |>
+    reverse_geocode(lat = LAT_DD_WGS84, long = LON_DD_WGS84, address = addr, method = "osm")
+```
+
+
+```{r}
+# fixing addresses that do not contain a zip code
+
+# "Austin, Travis County, Texas, United States" all correspond to Walter E. Long Lake
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "Austin, Travis County, Texas, United States",
+                       "Daffan Lane, Austin, Texas, 78724, United States",
+                       addr))
+# "FM 973 North, Travis County, Texas, United States" all correspond to Gilleland Creek
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "FM 973 North, Travis County, Texas, United States",
+                       "FM 973 North, Travis County, Texas, 78763, United States",
+                       addr))
+# "Travis County, Texas, United States" all correspond to the same area of Barton Creek
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "Travis County, Texas, United States",
+                       "Travis County, Texas, 78736, United States",
+                       addr))
+# "Webberville Road, Travis County, Texas, United States" all correspond to Gilleland Creek
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "Webberville Road, Travis County, Texas, United States",
+                       "17322 Webberville Road, Travis County, Texas, 78653, United States",
+                       addr))
+```
+
+
+```{r}
+# remove the 5 digit number at the beginning of these ones so it doesn't get confused for a zip code
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "15209, Decker Lake Road, Decker Lake Estates, Trinity Hill, Travis County, Texas, 78653, United States",
+                       "Decker Lake Road, Decker Lake Estates, Trinity Hill, Travis County, Texas, 78653, United States",
+                       addr))
+
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "12133, Metric Boulevard, Village at Walnut Creek, Austin, Travis County, Texas, 78758, United States",
+                       "Metric Boulevard, Village at Walnut Creek, Austin, Travis County, Texas, 78758, United States",
+                       addr))
+
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "12099, Elmont Drive, The Crossing, Austin, Travis County, Texas, 78741, United States",
+                       "Elmont Drive, The Crossing, Austin, Travis County, Texas, 78741, United States",
+                       addr))
+
+training_water_zip <- training_water_zip %>%
+  mutate(addr = ifelse(addr == "10321, Rutland Village East, Austin, Travis County, Texas, 78758, United States",
+                       "Rutland Village East, Austin, Travis County, Texas, 78758, United States",
+                       addr))
+
+```
+
+
+```{r}
+# make a zip code column 
+
+training_water_zip <- training_water_zip %>%
+  mutate(ZIP = str_extract(addr, "\\b\\d{5}\\b"))
+
+```
+
+
+
+
+
+
 
 ```{r}
 metals_soil <- water_data |> filter(MEDIUM == "Soil")
@@ -219,6 +305,49 @@ ggplot(top_watershed_data, aes(x = as.numeric(YEAR), y = sum_result, color = WAT
   theme(legend.position = "bottom")
 ```
 
+
+```{r}
+# use metals_sg_water data to visualize metal peaks in watersheds during 2014 
+
+# count number of observations per watershed per year
+monthly_counts <- bacteria_metal_water %>%
+ # filter(PARAMETER == "ZINC") %>%
+  group_by(WATERSHED, MONTH) %>%
+  summarise(obs_count = sum(RESULT), .groups = "drop")
+
+# get  top 5 most sampled watersheds overall
+top_5_watersheds <- monthly_counts %>%
+  group_by(WATERSHED) %>%
+  summarise(total_obs = sum(obs_count)) %>%
+  arrange(desc(total_obs)) %>%
+  slice(2:12) %>%
+  pull(WATERSHED)
+
+# filter to only the top 5 watersheds
+top_watershed_data <- monthly_counts %>%
+  filter(WATERSHED %in% top_5_watersheds)
+
+# plot
+ggplot(top_watershed_data, aes(x = as.numeric(MONTH), y = obs_count, color = WATERSHED)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(
+    title = "Top 5 Watersheds by Sampling Frequency (by month)",
+    x = "month",
+    y = "Number of Metals Observations",
+    color = "Watershed"
+  ) +
+  theme_minimal() +
+
+  theme(legend.position = "bottom")
+
+```
+
+
+
+```{r}
+# visualize month distribution 
+```
 
 
 
