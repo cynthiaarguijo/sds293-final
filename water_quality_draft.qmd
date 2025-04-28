@@ -9,6 +9,9 @@ library(dplyr)
 library(readr)
 library(ggplot2)
 library(stringr)
+library(tidyr)
+library(maps)
+library(tidygeocoder)
 Water_Quality_Sampling_Data <- read_csv("Water_Quality_Sampling_Data.csv")
 ```
 
@@ -193,6 +196,100 @@ testing_water_zip <- testing_water_zip %>%
 ```
 
 
+
+
+
+
+
+get total results by coordinates:
+for training data
+```{r}
+# note that many coordinates are missing!
+coord_results_tr <- training_water_zip %>%
+  group_by(LAT_DD_WGS84, LON_DD_WGS84) %>%
+  summarise(
+    total_bacteria = sum(RESULT[PARAM_TYPE == "Bacteria/Pathogens"], na.rm = TRUE),
+    total_metals = sum(RESULT[PARAM_TYPE == "Metals"], na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+by watershed
+```{r}
+watershed_results_tr <- training_water_zip %>%
+  group_by(WATERSHED) %>%
+  summarise(
+    total_bacteria = sum(RESULT[PARAM_TYPE == "Bacteria/Pathogens"], na.rm = TRUE),
+    total_metals = sum(RESULT[PARAM_TYPE == "Metals"], na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+by zip
+
+```{r}
+zip_results_tr <- training_water_zip %>%
+  group_by(ZIP) %>%
+  summarise(
+    total_bacteria = sum(RESULT[PARAM_TYPE == "Bacteria/Pathogens"], na.rm = TRUE),
+    total_metals = sum(RESULT[PARAM_TYPE == "Metals"], na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+for testing data
+```{r}
+watershed_results_te <- testing_water_zip %>%
+  group_by(WATERSHED) %>%
+  summarise(
+    total_bacteria = sum(RESULT[PARAM_TYPE == "Bacteria/Pathogens"], na.rm = TRUE),
+    total_metals = sum(RESULT[PARAM_TYPE == "Metals"], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+zip_results_te <- testing_water_zip %>%
+  group_by(ZIP) %>%
+  summarise(
+    total_bacteria = sum(RESULT[PARAM_TYPE == "Bacteria/Pathogens"], na.rm = TRUE),
+    total_metals = sum(RESULT[PARAM_TYPE == "Metals"], na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+
+
+
+
+
+random visualizations
+```{r}
+
+library(tidyr)
+
+# Reshape the data to long format for faceting
+coord_long <- coord_results_tr %>%
+  pivot_longer(
+    cols = c(total_bacteria, total_metals),
+    names_to = "Type",
+    values_to = "Total"
+  )
+
+# Plot the maps
+ggplot(coord_long, aes(x = LON_DD_WGS84, y = LAT_DD_WGS84)) +
+  geom_point(aes(size = Total, color = Type), alpha = 0.5) +
+  facet_wrap(~Type) +
+  scale_size_continuous(range = c(1, 25)) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Total Bacteria/Pathogens and Metals per Location",
+    x = "Longitude",
+    y = "Latitude",
+    size = "Total Amount",
+    color = "Parameter Type"
+  )
+
+```
 
 
 
@@ -459,22 +556,74 @@ ggplot(top_watershed_data, aes(x = as.numeric(MONTH), y = result_month, color = 
   theme(legend.position = "bottom")
 ```
 
-
-
 ```{r}
-# visualize month distribution 
+# Reshape your data
+coord_long <- coord_results_tr %>%
+  pivot_longer(
+    cols = c(total_bacteria, total_metals),
+    names_to = "Type",
+    values_to = "Total"
+  ) %>%
+  filter(!is.na(LAT_DD_WGS84) & !is.na(LON_DD_WGS84))
+
+# Get the Texas map outlines
+texas_map <- map_data("state") %>%
+  filter(region == "texas")
+
+# Plot
+ggplot() +
+  geom_polygon(data = texas_map, aes(x = long, y = lat, group = group),
+               fill = "white", color = "black") +
+  geom_point(data = coord_long, 
+             aes(x = LON_DD_WGS84, y = LAT_DD_WGS84, size = Total, color = Type),
+             alpha = 0.3) +
+  facet_wrap(~Type) +
+  scale_size_continuous(range = c(1, 5)) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(
+    title = "Total Bacteria/Pathogens and Metals Across Texas",
+    x = "Longitude",
+    y = "Latitude",
+    size = "Total Amount",
+    color = "Parameter Type"
+  )
 ```
 
 
 
-# this one:
-
 ```{r}
-reverse_geo <- bacteria_water %>% head() |>
-    reverse_geocode(lat = LAT_DD_WGS84, long = LON_DD_WGS84, address = addr, method = "osm")
-```
-```{r}
-# census_tracts <- reverse_geo %>%
-#     geocode(address = addr,  method = "census", full_results = TRUE, api_options = list(census_return_type = 'geographies'))
-```
+# Reshape your data
+coord_long <- coord_results_tr %>%
+  pivot_longer(
+    cols = c(total_bacteria, total_metals),
+    names_to = "Type",
+    values_to = "Total"
+  ) %>%
+  filter(!is.na(LAT_DD_WGS84) & !is.na(LON_DD_WGS84))
 
+# Get Texas outline
+texas_map <- map_data("state") %>%
+  filter(region == "texas")
+
+# Plot with zoom
+ggplot() +
+  geom_polygon(data = texas_map, aes(x = long, y = lat, group = group),
+               fill = "white", color = "black") +
+  geom_point(data = coord_long, 
+             aes(x = LON_DD_WGS84, y = LAT_DD_WGS84, size = Total, color = Type),
+             alpha = 0.7) +
+  facet_wrap(~Type) +
+  scale_size_continuous(range = c(2, 10)) +
+  coord_fixed(1.3, 
+              xlim = c(-98.2, -97.4),   # Longitude window
+              ylim = c(30.0, 30.6)) +    # Latitude window
+  theme_minimal() +
+  labs(
+    title = "Total Bacteria/Pathogens and Metals (Austin Area)",
+    x = "Longitude",
+    y = "Latitude",
+    size = "Total Amount",
+    color = "Parameter Type"
+  )
+```
