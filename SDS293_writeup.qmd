@@ -376,7 +376,7 @@ testing2 <- testing_water_zip %>%
    )
 ```
 
-remove zip codes that don't have income and household data and that dont have ecoli data:(
+remove zip codes that don't have income and household data and that dont have ecoli data
 
 ```{r}
 testing2 <- testing2 |> filter(!(ZIP %in% c("78667", "78680", "78691", "78712", "78763", "78767", "78717", "78754")))
@@ -396,7 +396,7 @@ zip_testing2 <- left_join(testing2, zipcode2016, by = "ZIP")
 ```{r}
 set.seed(1)
 
-glm.fits2 <- glm(lowincome ~ total_frequency + zinc_testing*median_zinc + lead_testing*median_lead + arsenic_testing*median_arsenic + cadmium_testing*median_cadmium + chromium_testing*median_chromium + copper_testing*median_copper + iron_testing*median_iron + nickel_testing*median_nickel, data = zip_training2, family = binomial)
+glm.fits2 <- glm(lowincome ~ total_frequency + median_ecoli + zinc_testing*median_zinc + lead_testing*median_lead + arsenic_testing*median_arsenic + cadmium_testing*median_cadmium + chromium_testing*median_chromium + copper_testing*median_copper + iron_testing*median_iron + nickel_testing*median_nickel, data = zip_training2, family = binomial)
 
 
 summary(glm.fits2)
@@ -441,7 +441,6 @@ print(confusion_matrix)
 model 3:
 
 ```{r}
-
 training3 <- training_water_zip %>%
   group_by(ZIP) %>%
   summarise(
